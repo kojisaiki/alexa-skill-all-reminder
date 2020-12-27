@@ -13,6 +13,7 @@
     "ask-sdk-model": "^1.19.0",
     "aws-sdk": "^2.326.0",
     "dotenv": "^8.2.0",
-    "googleapis": "^52.1.0"
+    "googleapis": "^52.1.0",
+    "moment-timezone": "0.5.32"
   }
 }

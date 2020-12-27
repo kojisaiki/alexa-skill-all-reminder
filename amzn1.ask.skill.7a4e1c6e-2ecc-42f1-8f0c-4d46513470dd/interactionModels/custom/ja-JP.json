@@ -27,10 +27,25 @@
         {
           "name": "AMAZON.NavigateHomeIntent",
           "samples": []
+        },
+        {
+          "name": "AMAZON.YesIntent",
+          "samples": [
+            "Remind",
+            "リマインド"
+          ]
+        },
+        {
+          "name": "RemindIntent",
+          "slots": [],
+          "samples": [
+            "更新して",
+            "リマインドを更新して"
+          ]
         }
       ],
       "types": []
     }
   },
-  "version": "2"
+  "version": "5"
 }

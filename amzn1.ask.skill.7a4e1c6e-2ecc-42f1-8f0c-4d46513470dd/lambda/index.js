@@ -7,24 +7,45 @@ const Alexa = require('ask-sdk-core');
 const { google } = require('googleapis');
 const dotenv = require('dotenv');
 require('dotenv').config();
+const moment = require('moment-timezone');
 
+const func = require('./func');
+
+// 入り口インテント
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'LaunchRequest';
     },
     async handle(handlerInput) {
-        const {
-            CLIENT_ID,
-            CLIENT_SECRET,
-            REDIRECT_URIS,
-            ACCESS_TOKEN,
-            REFRESH_TOKEN,
-            TOKEN_TYPE,
-            EXPIRE_DATE,
-            SCOPE,
-        } = process.env;
-          
-        const speakOutput = `client id=${CLIENT_ID} and token type=${TOKEN_TYPE} and scope=${SCOPE} and email=${process.env.NOTIFY_EMAIL}`;
+        // 共通の権限チェック
+        const error = func.validatePermission(handlerInput);
+        if (error) {
+            return error;
+        }
+        
+        const message = '「ぜんぶリマインド」スキルにようこそ。';
+
+        return handlerInput.responseBuilder
+            .speak(message)
+            .reprompt(message)
+            .getResponse();
+    }
+};
+
+// リマインドインテント
+const RemindIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'RemindIntent';
+    },
+    async handle(handlerInput) {
+        // 共通の権限チェック
+        const error = func.validatePermission(handlerInput);
+        if (error) {
+            return error;
+        }
+        
+        const speakOutput = '更新対象のカレンダーが設定されていません。';
 
         return handlerInput.responseBuilder
             .speak(speakOutput)
@@ -33,6 +54,19 @@ const LaunchRequestHandler = {
     }
 };
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 const HelloWorldIntentHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
@@ -40,12 +74,90 @@ const HelloWorldIntentHandler = {
     },
     async handle(handlerInput) {
         const calendarList = await getCalendarList();
+        const events = await getEvents('ems3a2nepchseq8cq0lmj911ug@group.calendar.google.com');
+        const eventInstances = await getEventInstances('ems3a2nepchseq8cq0lmj911ug@group.calendar.google.com');
         
-        const speakOutput = 'Calendar=' + calendarList.length;
+        const speakOutput = `Calendar=${calendarList.length} and events=${events.length} and instances=${eventInstances.length}`;
 
         return handlerInput.responseBuilder
             .speak(speakOutput)
-            //.reprompt('add a reprompt if you want to keep the session open for the user to respond')
+            .reprompt(speakOutput)
+            .getResponse();
+    }
+};
+
+const RemindSampleIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'AMAZON.YesIntent';
+    },
+    async handle(handlerInput) {
+        const { requestEnvelope, serviceClientFactory, responseBuilder } = handlerInput;
+        
+        const reminderApiClient = serviceClientFactory.getReminderManagementServiceClient();
+        
+        const consentToken = requestEnvelope.context.System.user.permissions && requestEnvelope.context.System.user.permissions.consentToken;
+        if (!consentToken) {
+            return responseBuilder
+                .speak('Alexaモバイルアプリから、リマインダーの許可を行ってください。')
+                .withAskForPermissionsConsentCard(['alexa::alerts:reminders:skill:readwrite'])
+                .getResponse();
+        }
+        
+        const reminderPayload = {
+            "trigger": {
+              "type": "SCHEDULED_RELATIVE",
+              "offsetInSeconds": "30",
+              "timeZoneId": "Asia/Tokyo"
+            },
+            "alertInfo": {
+              "spokenInfo": {
+                "content": [{
+                  "locale": "ja-JP",
+                  "text": "犬の散歩"
+                }]
+              }
+            },
+            "pushNotification": {
+              "status": "ENABLED"
+            }
+          };
+          
+        const currentDt = moment().tz('Asia/Tokyo');
+        const reminderPayload2 = {
+           "requestTime" : currentDt.format('YYYY-MM-DDTHH:mm:ss'),
+           "trigger": {
+                "type" : "SCHEDULED_ABSOLUTE",
+                "scheduledTime" : currentDt.add(15, 'second').format('YYYY-MM-DDTHH:mm:ss'),
+                "timeZoneId" : "Asia/Tokyo"
+           },
+           "alertInfo": {
+                "spokenInfo": {
+                    "content": [{
+                        "locale": "en-US", 
+                        "text": "最初で最後の犬の散歩"
+                    }]
+                }
+            },
+            "pushNotification" : {                            
+                 "status" : "ENABLED"
+            }
+        };
+         
+        try {
+        await reminderApiClient.createReminder(reminderPayload2);
+        } catch (error) {
+            console.log(`--- Error: \n${error}`)
+            return responseBuilder
+                .speak('There was an error on scheduling your reminder. Please try again later.')
+                .getResponse();
+        }
+        
+        const speakOutput = `Remind!`;
+
+        return responseBuilder
+            .speak(speakOutput)
+            // .reprompt(speakOutput)
             .getResponse();
     }
 };
@@ -90,6 +202,111 @@ async function getCalendarList() {
       })
     });
 }
+
+async function getEvents(calendarId) {
+    const {
+        CLIENT_ID,
+        CLIENT_SECRET,
+        REDIRECT_URIS,
+        ACCESS_TOKEN,
+        REFRESH_TOKEN,
+        TOKEN_TYPE,
+        EXPIRES_IN,
+        SCOPE,
+        CODE,
+    } = process.env;
+    
+    // Setup oAuth2 client
+    const oAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URIS);
+    console.log('================== client');
+    const tokens = {
+      access_token: ACCESS_TOKEN,
+      scope: SCOPE,
+      token_type: TOKEN_TYPE,
+      expires_in: EXPIRES_IN,
+    };
+    if (REFRESH_TOKEN) tokens.refresh_token = REFRESH_TOKEN;
+    oAuth2Client.credentials = tokens;
+    console.log('================== prepare tokens');
+    
+
+    // Create a Calendar instance
+    const calendarApi = google.calendar({
+      version: 'v3',
+      auth: oAuth2Client,
+    });
+    console.log('================== got calendar');
+        
+    console.log('================== try events list');
+    return new Promise((resolve,reject) => {
+      calendarApi.events.list({
+        calendarId: calendarId,
+        timeMin: '2020-12-21T00:00:00.000+09:00',
+        timeMax: '2020-12-27T23:59:59.000+09:00'
+      },(err, res) => {
+        resolve(res.data.items);
+      })
+    });
+}
+
+async function getEventInstances(calendarId) {
+    const {
+        CLIENT_ID,
+        CLIENT_SECRET,
+        REDIRECT_URIS,
+        ACCESS_TOKEN,
+        REFRESH_TOKEN,
+        TOKEN_TYPE,
+        EXPIRES_IN,
+        SCOPE,
+        CODE,
+    } = process.env;
+    
+    // Setup oAuth2 client
+    const oAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URIS);
+    console.log('================== client');
+    const tokens = {
+      access_token: ACCESS_TOKEN,
+      scope: SCOPE,
+      token_type: TOKEN_TYPE,
+      expires_in: EXPIRES_IN,
+    };
+    if (REFRESH_TOKEN) tokens.refresh_token = REFRESH_TOKEN;
+    oAuth2Client.credentials = tokens;
+    console.log('================== prepare tokens');
+    
+
+    // Create a Calendar instance
+    const calendarApi = google.calendar({
+      version: 'v3',
+      auth: oAuth2Client,
+    });
+    console.log('================== got calendar');
+        
+    console.log('================== try events instances');
+    return new Promise((resolve,reject) => {
+      calendarApi.events.instances({
+        calendarId: calendarId,
+        eventId: '53uo023p8r4f2lipfigikm473n',
+        timeMin: '2020-12-21T00:00:00.000+09:00',
+        timeMax: '2020-12-27T23:59:59.000+09:00'
+      },(err, res) => {
+        if (err) {
+          console.log('error ');
+          console.log(err);
+        }
+        resolve(res.data.items);
+      })
+    });
+}
+
+
+
+
+
+
+
+
 
 const HelpIntentHandler = {
     canHandle(handlerInput) {
@@ -201,7 +418,10 @@ const ErrorHandler = {
 exports.handler = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
+        RemindIntentHandler,
+        
         HelloWorldIntentHandler,
+        RemindSampleIntentHandler,
         HelpIntentHandler,
         CancelAndStopIntentHandler,
         FallbackIntentHandler,
@@ -210,4 +430,5 @@ exports.handler = Alexa.SkillBuilders.custom()
     .addErrorHandlers(
         ErrorHandler)
     .withCustomUserAgent('sample/hello-world/v1.2')
+    .withApiClient(new Alexa.DefaultApiClient())
     .lambda();
