@@ -16,15 +16,6 @@
           "samples": []
         },
         {
-          "name": "HelloWorldIntent",
-          "slots": [],
-          "samples": [
-            "hello",
-            "ハロー",
-            "こんにちは"
-          ]
-        },
-        {
           "name": "AMAZON.NavigateHomeIntent",
           "samples": []
         },
@@ -39,13 +30,59 @@
           "name": "RemindIntent",
           "slots": [],
           "samples": [
+            "リマインダー更新",
+            "更新",
             "更新して",
             "リマインドを更新して"
+          ]
+        },
+        {
+          "name": "ConfigureCalendarIntent",
+          "slots": [],
+          "samples": [
+            "カレンダーを選択したい",
+            "カレンダーの変更",
+            "カレンダー変更したい",
+            "別のカレンダーに変えたい",
+            "カレンダーを変えたい"
+          ]
+        },
+        {
+          "name": "CleanIntent",
+          "slots": [],
+          "samples": [
+            "バルス",
+            "設定をクリアして",
+            "設定を消して"
           ]
         }
       ],
       "types": []
-    }
+    },
+    "dialog": {
+      "intents": [
+        {
+          "name": "CleanIntent",
+          "confirmationRequired": true,
+          "prompts": {
+            "confirmation": "Confirm.Intent.1591360670012"
+          },
+          "slots": []
+        }
+      ],
+      "delegationStrategy": "ALWAYS"
+    },
+    "prompts": [
+      {
+        "id": "Confirm.Intent.1591360670012",
+        "variations": [
+          {
+            "type": "PlainText",
+            "value": "これを実行すると、このスキルでの設定やリマインダーがすべてクリアされます。実行して大丈夫ですか？"
+          }
+        ]
+      }
+    ]
   },
-  "version": "5"
+  "version": "16"
 }

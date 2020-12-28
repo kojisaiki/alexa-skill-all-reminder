@@ -11,6 +11,10 @@ const moment = require('moment-timezone');
 
 const func = require('./func');
 
+const PERSIST_FIELD = {
+    TARGET_CALENDAR: 'targetCalendar'
+};
+
 // 入り口インテント
 const LaunchRequestHandler = {
     canHandle(handlerInput) {
@@ -45,46 +49,106 @@ const RemindIntentHandler = {
             return error;
         }
         
-        const speakOutput = '更新対象のカレンダーが設定されていません。';
-
+        const persists = await handlerInput.attributesManager.getPersistentAttributes();
+        if (!persists[PERSIST_FIELD.TARGET_CALENDAR]) {
+        return handlerInput.responseBuilder
+            .speak('更新対象のカレンダーが設定されていません。まずはカレンダーを選択しましょう。')
+            .reprompt('「カレンダーを選択したい」と言ってください。')
+            .getResponse();
+        }
+        
+        const targetCalendar = persists[PERSIST_FIELD.TARGET_CALENDAR];
+        
+        // TODO: リマインダー更新処理
+        // const events = await func.refreshRemind();
+        const events = [];
+        
+        const speakOutput = `${targetCalendar.name}カレンダーをもとにリマインダーを更新しました。イベントは${events.length}個です。`;
+        
         return handlerInput.responseBuilder
             .speak(speakOutput)
-            .reprompt(speakOutput)
             .getResponse();
     }
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-const HelloWorldIntentHandler = {
+// カレンダー変更インテント
+const ConfigureCalendarIntentHandler = {
     canHandle(handlerInput) {
         return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
-            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'HelloWorldIntent';
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'ConfigureCalendarIntent';
     },
     async handle(handlerInput) {
-        const calendarList = await getCalendarList();
-        const events = await getEvents('ems3a2nepchseq8cq0lmj911ug@group.calendar.google.com');
-        const eventInstances = await getEventInstances('ems3a2nepchseq8cq0lmj911ug@group.calendar.google.com');
+        // 共通の権限チェック
+        const error = func.validatePermission(handlerInput);
+        if (error) {
+            return error;
+        }
         
-        const speakOutput = `Calendar=${calendarList.length} and events=${events.length} and instances=${eventInstances.length}`;
-
+        const persists = await handlerInput.attributesManager.getPersistentAttributes();
+        
+        // TODO: カレンダー一覧をAPIで取得し、何らかの手段で特定の１つをユーザーに選択させる
+        const calendarList = await func.getCalendarList();
+        
+        // TODO: カレンダー一覧から獲得したカレンダー情報を設定
+        const targetCalendar = {
+            name: '日々',
+            calendarId: process.env.TARGET_CALENDAR_ID
+        };
+        
+        persists[PERSIST_FIELD.TARGET_CALENDAR] = targetCalendar;
+        
+        handlerInput.attributesManager.setPersistentAttributes(persists);
+        await handlerInput.attributesManager.savePersistentAttributes();
+        
         return handlerInput.responseBuilder
-            .speak(speakOutput)
-            .reprompt(speakOutput)
+            .speak(`${calendarList.length}個の中から、カレンダーを設定しました。早速更新してリマインダーを設定してみましょう。`)
+            .reprompt('まだリマインダーは作成されていません。リマインダーを更新しましょう。')
             .getResponse();
     }
 };
+
+// 設定消去インテント
+const CleanIntentHandler = {
+    canHandle(handlerInput) {
+        return Alexa.getRequestType(handlerInput.requestEnvelope) === 'IntentRequest'
+            && Alexa.getIntentName(handlerInput.requestEnvelope) === 'CleanIntent';
+    },
+    async handle(handlerInput) {
+        // 共通の権限チェック
+        const error = func.validatePermission(handlerInput);
+        if (error) {
+            return error;
+        }
+        
+        const persists = await handlerInput.attributesManager.getPersistentAttributes();
+        
+        persists[PERSIST_FIELD.TARGET_CALENDAR] = null;
+        
+        // TODO: 既存のリマインダーを消す
+        
+        handlerInput.attributesManager.setPersistentAttributes(persists);
+        await handlerInput.attributesManager.savePersistentAttributes();
+        
+        return handlerInput.responseBuilder
+            .speak('設定をクリアしました。次は何をしますか？再度カレンダーを設定することをお勧めします。')
+            .reprompt('次は何をしますか？再度カレンダーを設定することをお勧めします。')
+            .getResponse();
+    }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const RemindSampleIntentHandler = {
     canHandle(handlerInput) {
@@ -161,47 +225,6 @@ const RemindSampleIntentHandler = {
             .getResponse();
     }
 };
-
-async function getCalendarList() {
-    const {
-        CLIENT_ID,
-        CLIENT_SECRET,
-        REDIRECT_URIS,
-        ACCESS_TOKEN,
-        REFRESH_TOKEN,
-        TOKEN_TYPE,
-        EXPIRES_IN,
-        SCOPE,
-        CODE,
-    } = process.env;
-    
-    // Setup oAuth2 client
-    const oAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URIS);
-    console.log('================== client');
-    const tokens = {
-      access_token: ACCESS_TOKEN,
-      scope: SCOPE,
-      token_type: TOKEN_TYPE,
-      expires_in: EXPIRES_IN,
-    };
-    if (REFRESH_TOKEN) tokens.refresh_token = REFRESH_TOKEN;
-    oAuth2Client.credentials = tokens;
-    console.log('================== prepare tokens');
-    
-
-    // Create a Calendar instance
-    const calendar = google.calendar({
-      version: 'v3',
-      auth: oAuth2Client,
-    });
-    console.log('================== got calendar');
-        
-    return new Promise((resolve,reject) => {
-      calendar.calendarList.list({},(err, res) => {
-        resolve(res.data.items);
-      })
-    });
-}
 
 async function getEvents(calendarId) {
     const {
@@ -410,6 +433,9 @@ const ErrorHandler = {
     }
 };
 
+
+const persistenceAdapter = require('ask-sdk-s3-persistence-adapter');
+
 /**
  * This handler acts as the entry point for your skill, routing all request and response
  * payloads to the handlers above. Make sure any new handlers or interceptors you've
@@ -419,9 +445,9 @@ exports.handler = Alexa.SkillBuilders.custom()
     .addRequestHandlers(
         LaunchRequestHandler,
         RemindIntentHandler,
+        ConfigureCalendarIntentHandler,
+        CleanIntentHandler,
         
-        HelloWorldIntentHandler,
-        RemindSampleIntentHandler,
         HelpIntentHandler,
         CancelAndStopIntentHandler,
         FallbackIntentHandler,
@@ -431,4 +457,7 @@ exports.handler = Alexa.SkillBuilders.custom()
         ErrorHandler)
     .withCustomUserAgent('sample/hello-world/v1.2')
     .withApiClient(new Alexa.DefaultApiClient())
+    .withPersistenceAdapter(
+        new persistenceAdapter.S3PersistenceAdapter(
+            {bucketName:process.env.S3_PERSISTENCE_BUCKET}))
     .lambda();
