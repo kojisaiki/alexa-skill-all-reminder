@@ -95,18 +95,20 @@ module.exports = {
         const persists = await handlerInput.attributesManager.getPersistentAttributes();
         
         // 単独イベント
-        const foundEvents = await getEventsInWeek(calendarApiClient, calendarId, moment().tz('Asia/Tokyo'));
+        const eventStartDt = moment().tz('Asia/Tokyo').set({hour:0, minute:0, second:0});
+        const eventEndDt = eventStartDt.clone().add(7, 'days').set({hour:23, minute:59, second:59});
+        const foundEvents = await getEvents(calendarApiClient, calendarId, eventStartDt, eventEndDt);
         
         // 繰り返しイベントのインスタンスを取得しつつ、リマインドするべきイベントリストを作成
         const actualEvents = [];
-        foundEvents.forEach(event => {
+        for (const event of foundEvents) {
             if (event.recurrence) {
-                // TODO: get event instances
-                // TODO: add event instances into actualEvents
+                const eventsInRecurrence = await getEventsInRecurrence(calendarApiClient, calendarId, event.id, eventStartDt, eventEndDt);
+                actualEvents.push(...eventsInRecurrence);
             } else {
                 actualEvents.push(event);
             }
-        })
+        }
         
         // 永続ストレージから登録済みイベントを取得する
         const remindedEvents = persists[constants.PERSIST_FIELD.REMINDED_EVENTS];
@@ -122,7 +124,7 @@ module.exports = {
                 removeEvents[event.id] = null;
             } else {
                 // 削除対象（リマインド済みイベント）に存在しなかったら、追加対象となる
-                addEvents.push(actualEvents);
+                addEvents.push(event);
             }
         });
         
@@ -145,15 +147,29 @@ module.exports = {
 /**
  * １週間分のイベント取得。
  */
-async function getEventsInWeek(calendarApiClient, calendarId, startDateTime) {
-    const start = startDateTime.clone().set({hour:0, minute:0, second:0});
-    const end = start.clone().add(7, 'days').set({hour:23, minute:59, second:59});
-    
+async function getEvents(calendarApiClient, calendarId, startDt, endDt) {
     return new Promise((resolve, reject) => {
       calendarApiClient.events.list({
         calendarId: calendarId,
-        timeMin: start.format('YYYY-MM-DDTHH:mm:ssZ'),
-        timeMax: end.format('YYYY-MM-DDTHH:mm:ssZ')
+        timeMin: startDt.format('YYYY-MM-DDTHH:mm:ssZ'),
+        timeMax: endDt.format('YYYY-MM-DDTHH:mm:ssZ')
+      },(err, res) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(res.data.items);
+        }
+      })
+    });
+}
+
+async function getEventsInRecurrence(calendarApiClient, calendarId, eventId, startDt, endDt) {
+    return new Promise((resolve, reject) => {
+      calendarApiClient.events.instances({
+        calendarId: calendarId,
+        eventId: eventId,
+        timeMin: startDt.format('YYYY-MM-DDTHH:mm:ssZ'),
+        timeMax: endDt.format('YYYY-MM-DDTHH:mm:ssZ')
       },(err, res) => {
         if (err) {
           reject(err);
