@@ -4,6 +4,7 @@ require('dotenv').config();
 
 logic().then(v => {
     console.log('success');
+    console.log(v);
 }, err => {
     console.log('error');
     console.log(err);
@@ -131,6 +132,12 @@ async function logic() {
 
     console.log('reminded events');
     console.log(remindedEvents);
+    
+    return {
+        add: addEvents.length,
+        remove: Object.entries(removeEvents).length,
+        reminded: Object.entries(remindedEvents).length
+    };
 }
 
 /**

@@ -95,7 +95,7 @@ module.exports = {
         const persists = await handlerInput.attributesManager.getPersistentAttributes();
         
         // 単独イベント
-        const eventStartDt = moment().tz('Asia/Tokyo').set({hour:0, minute:0, second:0});
+        const eventStartDt = moment().tz('Asia/Tokyo');
         const eventEndDt = eventStartDt.clone().add(7, 'days').set({hour:23, minute:59, second:59});
         const foundEvents = await getEvents(calendarApiClient, calendarId, eventStartDt, eventEndDt);
         
@@ -111,41 +111,62 @@ module.exports = {
         }
         
         // 永続ストレージから登録済みイベントを取得する
-        const remindedEvents = persists[constants.PERSIST_FIELD.REMINDED_EVENTS];
+        var oldEvents = persists[constants.PERSIST_FIELD.REMINDED_EVENTS];
+        if (!oldEvents) {
+            oldEvents = {};
+        }
         
         // 登録イベント、削除イベントを算出
+        const newRemindedEvents = {};
         const removeEvents = {};
         const addEvents = [];
-        // まずはリマインド済みイベントを全部削除対象としておく
-        for (const [key, value] of Object.entries(remindedEvents)) {
-            removeEvents[key] = value;
+        // リマインド済みイベントから、未来のもののみを残す
+        for (const [key, value] of Object.entries(oldEvents)) {
+            if (moment(value.start.dateTime).isAfter()) {
+                // 保持
+                newRemindedEvents[key] = value;
+                // 削除対象
+                removeEvents[key] = value;
+            }
         }
+        
         actualEvents.forEach(event => {
-            if (removeEvents[event.id]) {
-                // 有効なイベントは削除対象から除外する（リマインドが残る）
+            if (newRemindedEvents[event.id]) {
+                // 削除対対象ではなくなる
                 delete removeEvents[event.id];
             } else {
-                // 削除対象（リマインド済みイベント）に存在しなかったら、追加対象となる
+                // リマインド済みイベントに存在しなかったら、追加対象となる
                 addEvents.push(event);
             }
         });
         
         // イベントをリマインダー登録
+        var miss = 0;
         const requestDt = moment().tz('Asia/Tokyo');
         for (const event of addEvents) {
-            if (await remindEvent(handlerInput, event, requestDt)) {
-                // リマインドに成功したら、リマインド済みに追加
-                remindedEvents[event.id] = event;
+            const alertToken = await remindEvent(handlerInput, event, requestDt);
+            if (alertToken) {
+                event['alertToken'] = alertToken;
+                newRemindedEvents[event.id] = event;
             }
         }
         
-        // TODO: リマインダー削除
+        // リマインダー削除
         for (const [key, value] of Object.entries(removeEvents)) {
-            // TODO: リマインダー削除
-            if (value) {
-                delete remindedEvents[key];
-            }
+            deleteReminder(handlerInput, value['alertToken'])
+            delete newRemindedEvents[key];
         }
+        
+        // 永続ストレージに保存
+        persists[constants.PERSIST_FIELD.REMINDED_EVENTS] = newRemindedEvents;
+        handlerInput.attributesManager.setPersistentAttributes(persists);
+        await handlerInput.attributesManager.savePersistentAttributes();
+        
+        return {
+            add: addEvents.length,
+            remove: Object.entries(removeEvents).length,
+            reminded: Object.entries(newRemindedEvents).length
+        };
     }
 }
 
@@ -196,10 +217,10 @@ async function remindEvent(handlerInput, event, requestDt) {
     const reminderApiClient = serviceClientFactory.getReminderManagementServiceClient();
     
     const reminderPayload = {
-       "requestTime" : moment().format('YYYY-MM-DDTHH:mm:ss'),
+       "requestTime" : requestDt.format('YYYY-MM-DDTHH:mm:ss'),
        "trigger": {
             "type" : "SCHEDULED_ABSOLUTE",
-            "scheduledTime" : event.start.dateTime,
+            "scheduledTime" : moment.tz(event.start.dateTime, 'Asia/Tokyo').format('YYYY-MM-DDTHH:mm:ss'),
             "timeZoneId" : "Asia/Tokyo"
        },
        "alertInfo": {
@@ -216,11 +237,18 @@ async function remindEvent(handlerInput, event, requestDt) {
     };
     
     try {
-        await reminderApiClient.createReminder(reminderPayload);
+        const result = await reminderApiClient.createReminder(reminderPayload);
+        return result.alertToken;
     } catch (error) {
-        console.log(`--- Error: \n${error}`)
-        return false;
+        console.log(`~~~~ Error handled: ${JSON.stringify(error)}`);
+        return null;
     }
+}
+
+async function deleteReminder(handlerInput, alertToken) {
+    const { requestEnvelope, serviceClientFactory, responseBuilder } = handlerInput;
     
-    return true;
+    const reminderApiClient = serviceClientFactory.getReminderManagementServiceClient();
+    
+    await reminderApiClient.deleteReminder(alertToken);
 }

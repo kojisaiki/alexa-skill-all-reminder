@@ -16,7 +16,7 @@ const LaunchRequestHandler = {
             return error;
         }
         
-        const message = '「ぜんぶリマインド」スキルにようこそ。';
+        const message = `「ぜんぶリマインド」スキルにようこそ。`;
 
         return handlerInput.responseBuilder
             .speak(message)
@@ -48,10 +48,11 @@ const RemindIntentHandler = {
         
         const targetCalendar = persists[constants.PERSIST_FIELD.TARGET_CALENDAR];
         
-        // TODO: リマインダー更新処理
-        const events = await func.refreshRemind(handlerInput, targetCalendar.calendarId);
+        // リマインダー更新処理
+        const results = await func.refreshRemind(handlerInput, targetCalendar.calendarId);
         
-        const speakOutput = `${targetCalendar.name}カレンダーをもとにリマインダーを更新しました。イベントは${events.length}個です。`;
+        const speakOutput = `${targetCalendar.name}カレンダーをもとにリマインダーを更新しました。
+        ${results.add}件の追加、${results.remove}件の削除があり、現在リマインドされているのは${results.reminded}件です。。`;
         
         return handlerInput.responseBuilder
             .speak(speakOutput)
@@ -111,6 +112,7 @@ const CleanIntentHandler = {
         const persists = await handlerInput.attributesManager.getPersistentAttributes();
         
         persists[constants.PERSIST_FIELD.TARGET_CALENDAR] = null;
+        persists[constants.PERSIST_FIELD.REMINDED_EVENTS] = null;
         
         // TODO: 既存のリマインダーを消す
         
