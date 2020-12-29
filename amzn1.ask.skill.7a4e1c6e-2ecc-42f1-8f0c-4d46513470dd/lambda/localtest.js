@@ -72,26 +72,31 @@ async function logic() {
     }
 
     // 永続ストレージから登録済みイベントを取得する
-    const remindedEvents = [
-        {
+    const remindedEvents = {
+        '53uo023p8r4f2lipfigikm473n_20201231T080000Z': {
             id: '53uo023p8r4f2lipfigikm473n_20201231T080000Z',
             summary: '晩御飯の献立を考えましょう',
           },
-          {
+          '17t51jm8548g4884cnp69f17qp': {
             id: '17t51jm8548g4884cnp69f17qp',
             summary: '12月30日です！',
           },
-          {
+          'yahoo!': {
               id: 'yahoo!',
               summary: 'きえる'
           }
-    ];
+        };
+        
+    console.log('===================================== latest reminded events');
+    console.log(remindedEvents);
 
     // 登録イベント、削除イベントを算出
     const removeEvents = {};
     const addEvents = [];
     // まずはリマインド済みイベントを全部削除対象としておく
-    remindedEvents.forEach(event => removeEvents[event.id] = event);
+    for (const [key, value] of Object.entries(remindedEvents)) {
+        removeEvents[key] = value;
+    }
     
     console.log('===================================== prepared remove events');
     console.log(removeEvents);
@@ -99,7 +104,7 @@ async function logic() {
     actualEvents.forEach(event => {
         if (removeEvents[event.id]) {
             // 有効なイベントは削除対象から除外する（リマインドが残る）
-            removeEvents[event.id] = null;
+            delete removeEvents[event.id];
         } else {
             // 削除対象（リマインド済みイベント）に存在しなかったら、追加対象となる
             addEvents.push(event);
@@ -111,6 +116,21 @@ async function logic() {
     
     console.log('remove events');
     console.log(removeEvents);
+        
+    // イベントをリマインダー登録
+    const requestDt = moment().tz('Asia/Tokyo');
+    for (const event of addEvents) {
+        remindedEvents[event.id] = event;
+    }
+    
+    // TODO: リマインダー削除
+    for (const [key, value] of Object.entries(removeEvents)) {
+        // TODO: リマインダー削除
+            delete remindedEvents[key];
+    }
+
+    console.log('reminded events');
+    console.log(remindedEvents);
 }
 
 /**

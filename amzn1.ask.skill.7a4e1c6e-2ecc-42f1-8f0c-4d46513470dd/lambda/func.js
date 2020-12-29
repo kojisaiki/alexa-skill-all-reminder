@@ -117,11 +117,13 @@ module.exports = {
         const removeEvents = {};
         const addEvents = [];
         // まずはリマインド済みイベントを全部削除対象としておく
-        remindedEvents.forEach(event => removeEvents[event.id] = event);
+        for (const [key, value] of Object.entries(remindedEvents)) {
+            removeEvents[key] = value;
+        }
         actualEvents.forEach(event => {
             if (removeEvents[event.id]) {
                 // 有効なイベントは削除対象から除外する（リマインドが残る）
-                removeEvents[event.id] = null;
+                delete removeEvents[event.id];
             } else {
                 // 削除対象（リマインド済みイベント）に存在しなかったら、追加対象となる
                 addEvents.push(event);
@@ -133,13 +135,16 @@ module.exports = {
         for (const event of addEvents) {
             if (await remindEvent(handlerInput, event, requestDt)) {
                 // リマインドに成功したら、リマインド済みに追加
-                remindedEvents.push(event);
+                remindedEvents[event.id] = event;
             }
         }
         
         // TODO: リマインダー削除
-        for (const [key, value] of removeEvents.entries()) {
+        for (const [key, value] of Object.entries(removeEvents)) {
             // TODO: リマインダー削除
+            if (value) {
+                delete remindedEvents[key];
+            }
         }
     }
 }
